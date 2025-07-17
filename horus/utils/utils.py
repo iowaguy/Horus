@@ -2,37 +2,24 @@
 # -*- coding: utf-8 -*-
 
 import os
-import re
 import sys
 import http
 import json
 import time
-import shlex
+import shutil                
 import eth_utils
 import subprocess
 
 from sys import getsizeof
-from collections import Mapping, Container
+from collections.abc import Mapping, Container
 
 def command_exists(cmd):
     return subprocess.call(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE) == 0
 
-def run_command(cmd):
-    FNULL = open(os.devnull, 'w')
-    solc_p = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE, stderr=FNULL)
-    return solc_p.communicate()[0]
-
 def has_souffle_installed():
     if not command_exists("souffle --version"):
-        print("Souffle is missing. Please install souffle and make sure souffle is in the path.")
+        print("Soufflé is missing. Please install Soufflé and make sure Soufflé is in the path.")
         return False
-    else:
-        cmd = "souffle --version"
-        out = run_command(cmd).strip()
-        version = re.findall(r"Souffle: (\d*.\d*.\d*)", str(out))[0]
-        supported_version = '1.7.1'
-        if version != supported_version:
-            print("You are using souffle version %s. The supported version is %s." % (version, supported_version))
     return True
 
 def serialize_web3_object(object):
@@ -99,15 +86,15 @@ def request_debug_trace_transaction(connection, connection_retries, rpc_host, rp
     with open(os.path.dirname(os.path.realpath(sys.argv[0]))+'/extractor/evm_tracing.js', 'r') as file:
         tracer = file.read().replace('\n', '')
     if tracer:
-        data = json.dumps({"id": 1, "method": "debug_traceTransaction", "params": [transaction_hash, {"tracer": tracer, "timeout": str(request_timeout)+"s"}]})
+        data = json.dumps({"id": 1, "jsonrpc":"2.0", "method": "debug_traceTransaction", "params": [transaction_hash, {"tracer": tracer, "timeout": str(request_timeout)+"s"}]})
     else:
-        data = json.dumps({"id": 1, "method": "debug_traceTransaction", "params": [transaction_hash, {"disableStack": disable_stack, "disableMemory": disable_memory, "disableStorage": disable_storage}]})
+        data = json.dumps({"id": 1, "jsonrpc":"2.0", "method": "debug_traceTransaction", "params": [transaction_hash, {"disableStack": disable_stack, "disableMemory": disable_memory, "disableStorage": disable_storage}]})
     tries = 0
     headers = {"Content-Type": "application/json"}
     while tries < connection_retries:
         try:
             tries += 1
-            connection.request('GET', '/', data, headers)
+            connection.request('POST', '/', data, headers)
             response = connection.getresponse()
             if response.status == 200 and response.reason == "OK":
                 return json.loads(response.read())
@@ -127,15 +114,15 @@ def request_debug_trace_block(connection, connection_retries, rpc_host, rpc_port
     with open(os.path.dirname(os.path.realpath(sys.argv[0]))+'/extractor/evm_tracing.js', 'r') as file:
         tracer = file.read().replace('\n', '')
     if tracer:
-        data = json.dumps({"id": 1, "method": "debug_traceBlockByNumber", "params": [hex(block_number), {"tracer": tracer, "timeout": str(request_timeout)+"s"}]})
+        data = json.dumps({"id": 1, "jsonrpc":"2.0", "method": "debug_traceBlockByNumber", "params": [hex(block_number), {"tracer": tracer, "timeout": str(request_timeout)+"s"}]})
     else:
-        data = json.dumps({"id": 1, "method": "debug_traceBlockByNumber", "params": [hex(block_number), {"disableStack": disable_stack, "disableMemory": disable_memory, "disableStorage": disable_storage}]})
+        data = json.dumps({"id": 1, "jsonrpc":"2.0", "method": "debug_traceBlockByNumber", "params": [hex(block_number), {"disableStack": disable_stack, "disableMemory": disable_memory, "disableStorage": disable_storage}]})
     tries = 0
     headers = {"Content-Type": "application/json"}
     while tries < connection_retries:
         try:
             tries += 1
-            connection.request('GET', '/', data, headers)
+            connection.request('POST', '/', data, headers)
             response = connection.getresponse()
             if response.status == 200 and response.reason == "OK":
                 return json.loads(response.read())
@@ -179,3 +166,14 @@ def deep_getsizeof(o, ids):
         return r + sum(d(x, ids) for x in o)
 
     return r
+
+def remove_files_within_folder(folder):
+    for filename in os.listdir(folder):
+        file_path = os.path.join(folder, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)  # remove file or symbolic link
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)  # remove folder and its contents
+        except Exception as e:
+            print(f'Failed to delete {file_path}. Reason: {e}')

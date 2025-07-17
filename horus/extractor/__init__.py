@@ -6,7 +6,6 @@ import io
 import csv
 import time
 import json
-import shutil
 import zipfile
 import tracemalloc
 
@@ -150,11 +149,11 @@ class Extractor:
             # Transfer facts
             elif trace[step]["op"] == "LOG3":
                 # This is the signature (topic) of the following ERC-20 event: Transfer(address,address,uint256)
-                if trace[step]["stack"][-3] == "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef":
+                if hex(int(trace[step]["stack"][-3])) == "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef":
                     _transaction_hash = transaction["hash"]
                     _contract = trace[step]["contract"]
-                    _from = trace[step]["stack"][-4]
-                    _to = trace[step]["stack"][-5]
+                    _from = settings.W3.to_checksum_address("0x"+hex(int(trace[step]["stack"][-4])).replace("0x", "").zfill(40)).lower()
+                    _to = settings.W3.to_checksum_address("0x"+hex(int(trace[step]["stack"][-5])).replace("0x", "").zfill(40)).lower()
                     _value = int(trace[step]["memory"], 16)
                     if compress:
                         in_memory_zip.append(facts_folder+"/transfer.facts", "%d\t%s\t%s\t%s\t%s\t%s\r\n" % (step, _transaction_hash, _contract, _from, _to, _value))
@@ -179,7 +178,7 @@ class Extractor:
                     else:
                         _callee = ""
                 else:
-                    _callee = trace[step]["stack"][-2]
+                    _callee = settings.W3.to_checksum_address("0x"+hex(int(trace[step]["stack"][-2])).replace("0x", "").zfill(40)).lower()
                 if trace[step]["op"] in ["CREATE", "CREATE2"]:
                     _amount = int(trace[step]["stack"][-1])
 
@@ -218,7 +217,7 @@ class Extractor:
             elif trace[step]["op"] in ["SELFDESTRUCT", "SUICIDE"]:
                 _transaction_hash = transaction["hash"]
                 _caller = transaction["from"]
-                _destination = trace[step]["stack"][-1]
+                _destination = settings.W3.to_checksum_address("0x"+hex(int(trace[step]["stack"][-1])).replace("0x", "").zfill(40)).lower()
                 _contract = trace[step]["contract"]
                 _balance = trace[step]["stack"][-2]
                 if compress:
@@ -383,7 +382,7 @@ class Extractor:
                     os.remove(facts_folder+".zip")
             else:
                 if os.path.isdir(facts_folder):
-                    shutil.rmtree(facts_folder)
+                    remove_files_within_folder(facts_folder)
         elif len(transactions) > 0:
             print("Transactions have already been extracted.")
             return
@@ -432,7 +431,7 @@ class Extractor:
                 if blocks:
                     block = blocks[transaction["blockNumber"]]
                 else:
-                    block = format_block(settings.W3.eth.getBlock(transaction["blockNumber"]))
+                    block = format_block(settings.W3.eth.get_block(transaction["blockNumber"]))
                 step = self.extract_facts_from_trace(facts_folder, trace, step, max_step, gas_used, block, transaction, taint_runner, stats, compress, in_memory_zip)
                 # Free memory
                 trace = {}

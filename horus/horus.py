@@ -12,6 +12,7 @@ import argparse
 import traceback
 
 from web3 import Web3
+from web3.middleware import ExtraDataToPOAMiddleware
 
 from utils.utils import *
 from utils import settings
@@ -67,7 +68,11 @@ def main():
         parser.add_argument(
             "-n", "--number-of-threads", type=int, help="number of threads available to the Datalog program to run in parallel")
         parser.add_argument(
-            "-p", "--profile", action="store_true", help="run the Souffle profiler during the execution of the Datalog program")
+            "-p", "--profile", action="store_true", help="run the Soufflé profiler during the execution of the Datalog program")
+        parser.add_argument(
+            "-l", "--legacy-mode", action="store_true", help="run Soufflé in legacy mode to run a Datalog file of an older version of Soufflé")
+        parser.add_argument(
+            "-i", "--interpreter-mode", action="store_true", help="run Soufflé in interpreter mode thereby bypassing Datalog file compilation")
 
         parser.add_argument(
             "--neo4j-connection", type=str, default="bolt://localhost:7687", help="Neo4J server connection string (default: 'bolt://localhost:7687')")
@@ -96,7 +101,7 @@ def main():
         parser.add_argument(
             "--port", type=int, help="Ethereum client HTTP-RPC port (default: '"+str(settings.RPC_PORT)+"')")
         parser.add_argument(
-            "-v", "--version", action="version", version="Horus version 0.0.1 - 'Ramses II'")
+            "-v", "--version", action="version", version="Horus version 0.0.2 - 'Merneptah'")
 
         args = parser.parse_args()
 
@@ -127,13 +132,9 @@ def main():
                 try:
                     tries += 1
                     settings.W3 = Web3(Web3.HTTPProvider("http://"+settings.RPC_HOST+":"+str(settings.RPC_PORT)))
-                    if settings.W3.isConnected():
-                        if not "api" in dir(settings.W3):
-                            chain_id = settings.W3.version.network
-                            client_info = settings.W3.version.node
-                        else:
-                            chain_id = str(settings.W3.eth.chainId)
-                            client_info = settings.W3.clientVersion
+                    if settings.W3.is_connected():
+                        chain_id = str(settings.W3.eth.chain_id)
+                        client_info = settings.W3.client_version
                         network = ""
                         if   chain_id == "1":
                             network = "mainnet"
@@ -141,6 +142,15 @@ def main():
                             network = "morden"
                         elif chain_id == "3":
                             network = "ropsten"
+                        elif chain_id == "10":
+                            network = "optimism"
+                            settings.W3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+                        elif chain_id == "8453":
+                            network = "base"
+                            settings.W3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+                        elif chain_id == "42161":
+                            network = "arbitrum"
+                            settings.W3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
                         else:
                             network = "unknown"
                         print("Connected to "+str(client_info)+" ("+network+")")
@@ -148,7 +158,7 @@ def main():
                         print("Error: Could not connect to Ethereum client. Please make sure the client is running and settings are correct.")
                     if not settings.W3.eth.syncing:
                         print("Blockchain is in sync.")
-                        print("Latest block: "+str(settings.W3.eth.blockNumber))
+                        print("Latest block: "+str(settings.W3.eth.block_number))
                         print()
                     else:
                         print("Blockchain is syncing... (synced at %.2f%%)" % (settings.W3.eth.syncing.currentBlock/settings.W3.eth.syncing.highestBlock*100.0))
@@ -168,7 +178,7 @@ def main():
             transactions = []
             blocks = {}
             try:
-                transaction = format_transaction(settings.W3.eth.getTransaction(args.transaction_hash))
+                transaction = format_transaction(settings.W3.eth.get_transaction(args.transaction_hash))
                 if transaction["gas"] > 21000:
                     transactions.append(transaction)
             except Exception as e:
@@ -205,9 +215,9 @@ def main():
                     print("Analyzing block "+str(i))
                     transactions = []
                     try:
-                        block = settings.W3.eth.getBlock(i)
+                        block = settings.W3.eth.get_block(i)
                         for j in block["transactions"]:
-                            transaction = format_transaction(settings.W3.eth.getTransaction(j))
+                            transaction = format_transaction(settings.W3.eth.get_transaction(j))
                             transactions.append(transaction)
                     except:
                         print("Error: Blockchain is not in sync with block number: "+args.block_number)
@@ -235,9 +245,9 @@ def main():
                 stats = {"retrieval_times": [], "extraction_times": []}
                 transactions = []
                 try:
-                    block = settings.W3.eth.getBlock(int(args.block_number))
+                    block = settings.W3.eth.get_block(int(args.block_number))
                     for i in block["transactions"]:
-                        transaction = format_transaction(settings.W3.eth.getTransaction(i))
+                        transaction = format_transaction(settings.W3.eth.get_transaction(i))
                         transactions.append(transaction)
                 except:
                     print("Error: Blockchain is not in sync with block number: "+args.block_number)
@@ -266,7 +276,7 @@ def main():
                         else:
                             page += 1
                             for result in api_response["result"]:
-                                transaction = format_transaction(settings.W3.eth.getTransaction(result["hash"]))
+                                transaction = format_transaction(settings.W3.eth.get_transaction(result["hash"]))
                                 if transaction["gas"] > 21000:
                                     if not is_block_within_ranges(transaction["blockNumber"], settings.DOS_ATTACK_BLOCK_RANGES):
                                         if not transaction in transactions:
@@ -291,7 +301,7 @@ def main():
                         else:
                             page += 1
                             for result in api_response["result"]:
-                                transaction = format_transaction(settings.W3.eth.getTransaction(result["hash"]))
+                                transaction = format_transaction(settings.W3.eth.get_transaction(result["hash"]))
                                 if transaction["gas"] > 21000:
                                     if not is_block_within_ranges(transaction["blockNumber"], settings.DOS_ATTACK_BLOCK_RANGES):
                                         if not transaction in transactions:
@@ -333,7 +343,7 @@ def main():
                                 all_txs.update(txs)
                     transactions = []
                     for tx in all_txs:
-                        transaction = format_transaction(settings.W3.eth.getTransaction(tx))
+                        transaction = format_transaction(settings.W3.eth.get_transaction(tx))
                         transactions.append(transaction)
                     extractor = Extractor()
                     extractor.extract_facts_from_transactions(connection, transactions, blocks, settings.FACTS_FOLDER, args.compress)
@@ -349,7 +359,7 @@ def main():
                 return
             analyzer = Analyzer()
             if not os.path.isdir(settings.RESULTS_FOLDER) or not os.listdir(settings.RESULTS_FOLDER):
-                analyzer.analyze_facts(args.number_of_threads, args.profile, settings.FACTS_FOLDER, settings.RESULTS_FOLDER, settings.DATALOG_FILE, args.compress, settings.TMP_FOLDER)
+                analyzer.analyze_facts(args.number_of_threads, args.profile, args.legacy_mode, settings.FACTS_FOLDER, settings.RESULTS_FOLDER, settings.DATALOG_FILE, args.compress, settings.TMP_FOLDER, args.interpreter_mode)
             else:
                 print("Datalog facts have already been analyzed.")
 
